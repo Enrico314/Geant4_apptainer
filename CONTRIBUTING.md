@@ -1,0 +1,3 @@
+# Contributing Guidelines
+
+*Merge requests, bug reports, and all other forms of contribution are welcomed and highly encouraged*

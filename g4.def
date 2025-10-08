@@ -1,0 +1,86 @@
+# apptainer_geant4
+#Copyright (C) 2024  GSI
+#
+#This program is free software: you can redistribute it and/or modify
+#it under the terms of the GNU General Public License as published by
+#the Free Software Foundation, either version 3 of the License, or
+#(at your option) any later version.
+#
+#This program is distributed in the hope that it will be useful,
+#but WITHOUT ANY WARRANTY; without even the implied warranty of
+#MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#GNU General Public License for more details.
+#
+#You should have received a copy of the GNU General Public License
+#along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+Bootstrap: docker
+From: ubuntu:{{ VERSION }}
+
+%labels
+	Author e.pierobon@gsi.de
+	Version 1.1
+
+
+%arguments
+	VERSION=20.04
+	G4_VERSION=11.2.1
+	G4_INSTALL_DIR=/opt/geant4
+
+
+%environment
+	# geant4 install dir for geant4 compilation
+	export G4_D="{{ G4_INSTALL_DIR }}"
+	export GEANT4_DATA_DIR="{{G4_INSTALL_DIR}}/share/Geant4/data"
+	source /etc/profile.d/motd.sh
+	source {{G4_INSTALL_DIR}}/bin/geant4.sh
+
+
+%post
+	# default mount points
+	# Install necessary packages
+	export DEBIAN_FRONTEND="noninteractive"
+	apt-get update && apt-get install -y --no-install-recommends \
+	build-essential \
+	git-all \
+	gcc-multilib \
+	ca-certificates \
+	zlib1g-dev \
+	libfreetype6-dev \
+	libexpat1-dev \
+	cmake \
+	wget \
+	dcmtk 
+	apt-get clean
+
+	# install geant4
+	cd /tmp/
+	wget https://gitlab.cern.ch/geant4/geant4/-/archive/v{{ G4_VERSION }}/geant4-v{{G4_VERSION}}.tar.gz && tar xf geant4-v{{ G4_VERSION }}.tar.gz
+
+	mkdir -p geant4-{{ G4_VERSION }}-build && cd geant4-{{ G4_VERSION }}-build
+	mkdir -p {{ G4_INSTALL_DIR }}
+	cmake ../geant4-v{{ G4_VERSION }} -DCMAKE_INSTALL_PREFIX={{ G4_INSTALL_DIR }} -DGEANT4_INSTALL_DATA=ON -DGEANT4_BUILD_MULTITHREADED=ON
+	make -j 4 && make install 
+	# clean up
+	rm -rf /tmp/geant*
+	# set up motd 
+	echo "echo 'Welcome to geant4 apptainer'" >> /etc/profile.d/motd.sh
+	chmod +x /etc/profile.d/motd.sh
+
+%test 
+	echo "TESTING:"
+	echo "PATH = ${PATH}"
+	echo "G4_INSTALL_DIR = ${G4_D}"
+	echo "G4_DATA_DIR = ${GEANT4_DATA_DIR}"
+	printenv
+
+%runscript
+	echo "Sourcing Geant4"
+	source {{G4_INSTALL_DIR}}/bin/geant4.sh
+	exec "$@"
+
+%help
+	This is an apptainer running geant4.
+	Geant4 is installed in {{G4_INSTALL_DIR}}. It is automatically sourced before every command or at login.
+	Geant4 version is {{G4_VERSION}}. 
