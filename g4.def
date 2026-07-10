@@ -1,5 +1,5 @@
 # apptainer_geant4
-#Copyright (C) 2024  GSI
+#Copyright (C) 2026  GSI
 #
 #This program is free software: you can redistribute it and/or modify
 #it under the terms of the GNU General Public License as published by
@@ -19,68 +19,118 @@ Bootstrap: docker
 From: ubuntu:{{ VERSION }}
 
 %labels
-	Author e.pierobon@gsi.de
-	Version 1.1
+	Author Enrico314 (e.pierobon@gsi.de)
+	Version 1.5
 
 
 %arguments
-	VERSION=20.04
+	VERSION=22.04
 	G4_VERSION=11.2.1
 	G4_INSTALL_DIR=/opt/geant4
+	# geant4 building flags: can be:
+	# 	- Release default, with optimization 
+	# 	- Debug without optimization and with debug symbols (needed for deep gdb)
+	# 	- RelWithDebInfo optimized build with debugging symbols (kinda of in between if not space problems arise)
+	G4_CMAKE_BUILD_TYPE=Release
 
 
 %environment
 	# geant4 install dir for geant4 compilation
-	export G4_D="{{ G4_INSTALL_DIR }}"
-	export GEANT4_DATA_DIR="{{G4_INSTALL_DIR}}/share/Geant4/data"
-	source /etc/profile.d/motd.sh
-	source {{G4_INSTALL_DIR}}/bin/geant4.sh
+	export G4_D="/opt/geant4"
+	export G4INSTALL="${G4_D}"
+	export GEANT4_DATA_DIR="${G4_D}/share/Geant4/data"
+	export G4LIB_DIR="${G4_D}/lib"
+	export LD_LIBRARY_PATH="${G4_D}/lib"
+	export PATH="${G4_D}/bin:${PATH}"
+
+	. /etc/profile.d/motd.sh
+	#. /opt/geant4/bin/geant4.sh
 
 
-%post
+%post -c /bin/bash
+	set -ex
 	# default mount points
 	# Install necessary packages
 	export DEBIAN_FRONTEND="noninteractive"
 	apt-get update && apt-get install -y --no-install-recommends \
 	build-essential \
 	git-all \
-	gcc-multilib \
-	ca-certificates \
-	zlib1g-dev \
-	libfreetype6-dev \
-	libexpat1-dev \
 	cmake \
+	libexpat1-dev \
 	wget \
-	dcmtk 
+	dcmtk \
+	python3 \
+	python3-pip \
+	python3-venv \
+	ca-certificates \
+	openssh-client \
+	curl \
+	libx11-dev \
+	libxmu-dev \
+	libgl-dev
+	python3 -m pip install --no-cache-dir --upgrade pip
+	python3 -m pip install --no-cache-dir requests
+	python3 -m pip install --no-cache-dir pytz
 	apt-get clean
 
+	# G4 install https://gitlab.cern.ch/geant4/geant4/-/archive/v11.2.1/geant4-v11.2.1.tar.gz
 	# install geant4
 	cd /tmp/
 	wget https://gitlab.cern.ch/geant4/geant4/-/archive/v{{ G4_VERSION }}/geant4-v{{G4_VERSION}}.tar.gz && tar xf geant4-v{{ G4_VERSION }}.tar.gz
-
 	mkdir -p geant4-{{ G4_VERSION }}-build && cd geant4-{{ G4_VERSION }}-build
 	mkdir -p {{ G4_INSTALL_DIR }}
-	cmake ../geant4-v{{ G4_VERSION }} -DCMAKE_INSTALL_PREFIX={{ G4_INSTALL_DIR }} -DGEANT4_INSTALL_DATA=ON -DGEANT4_BUILD_MULTITHREADED=ON
-	make -j 4 && make install 
+	cmake ../geant4-v{{ G4_VERSION }} \
+		-DCMAKE_INSTALL_PREFIX={{ G4_INSTALL_DIR }} \
+		-DGEANT4_INSTALL_DATA=ON \
+		-DGEANT4_BUILD_MULTITHREADED=ON \
+		-DGEANT4_USE_OPENGL_X11=ON \
+		-DCMAKE_BUILD_TYPE={{ G4_CMAKE_BUILD_TYPE }}
+
+	make -j 20 >> /dev/null
+	make install >> /dev/null
 	# clean up
+	apt-get clean
 	rm -rf /tmp/geant*
+
+	# standard bind points
+	mkdir -p /src
+	mkdir -p /work
 	# set up motd 
-	echo "echo 'Welcome to geant4 apptainer'" >> /etc/profile.d/motd.sh
+	echo "echo 'Geant4 apptainer container'" >> /etc/profile.d/motd.sh
+	echo "echo 'For additional details check https://github.com/Enrico314/Geant4_apptainer'" >> /etc/profile.d/motd.sh
+	echo "echo 'or run the help command'" >> /etc/profile.d/motd.sh
 	chmod +x /etc/profile.d/motd.sh
 
 %test 
-	echo "TESTING:"
+#!/usr/bin/env bash
+	set -ex
+	source {{G4_INSTALL_DIR}}/bin/geant4.sh
+	echo "Testing variables"
 	echo "PATH = ${PATH}"
-	echo "G4_INSTALL_DIR = ${G4_D}"
-	echo "G4_DATA_DIR = ${GEANT4_DATA_DIR}"
+	echo "G4_INSTALL_DIR=${G4_D}"
+	echo "G4_DATA_DIR=${GEANT4_DATA_DIR}"
 	printenv
+	# try to compile an example 
+	echo "Building an example"
+	tmpdir=$(mktemp -d -t example_testing.XXXXXX)
+	cd "$tmpdir" || exit 1
+	cp -r /opt/geant4/share/Geant4/examples/basic/B1/* . 
+	mkdir build
+	cd build
+	cmake ../ 
+	make -j 4
+	./exampleB1 run2.mac 
+	rm -r $tmpdir
+	echo "Testing seems ok"
 
 %runscript
-	echo "Sourcing Geant4"
-	source {{G4_INSTALL_DIR}}/bin/geant4.sh
-	exec "$@"
+#!/usr/bin/env bash
+exec "$@"
+
 
 %help
-	This is an apptainer running geant4.
-	Geant4 is installed in {{G4_INSTALL_DIR}}. It is automatically sourced before every command or at login.
-	Geant4 version is {{G4_VERSION}}. 
+	This apptainer contains geant4. Mount points are available at /src and /work 
+	Geant4 is installed in {{ G4_INSTALL_DIR }} with X11 support. It is automatically sourced before every command or at login.
+	Geant4 version is {{ G4_VERSION }}. 
+	For additional detail check https://github.com/Enrico314/Geant4_apptainer
+
