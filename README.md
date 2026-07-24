@@ -1,7 +1,6 @@
 # Geant4 apptainer recipe
 
 This repository contain the apptainer[^1] recipe to build a Geant4[^2] container.
-Additionally, it is possible to find slurm scripts to run the container with Geant4.
 
 ### How to build the container
 
